@@ -3,7 +3,7 @@
 <head>
     <title>InteractiveRallyGrid</title>
 
-    <script type="text/javascript" src="/apps/2.0rc2/sdk.js"></script>
+    <script type="text/javascript" src="/apps/2.0rc2/sdk-debug.js"></script>
 
     <script type="text/javascript">
         Rally.onReady(function () {
@@ -18,6 +18,7 @@ Ext.define('CustomApp', {
 
     defectStore: undefined,       // app level references to the store and grid for easy access in various methods
     defectGrid: undefined,
+    storyList: undefined,
 
     // Entry Point to App
     launch: function() {
@@ -59,11 +60,9 @@ Ext.define('CustomApp', {
 
     // create defect severity pulldown then load data
     _loadSeverities: function() {
-        this.severityComboBox = Ext.create('Rally.ui.combobox.FieldValueComboBox', {
-          model: 'Defect',
-          field: 'Severity',
-          fieldLabel: 'Severity',
-          labelAlign: 'right',
+        this.severityComboBox = Ext.create('Rally.ui.combobox.UserSearchComboBox', {
+          // TODO replace with context project
+          project: "https://rally1.rallydev.com/slm/webservice/v2.x/project/11683821416.js",
           listeners: {
             ready: function(combobox) {             // this is the last 'data' pulldown we're loading so both events go to just load the actual defect data
                  this._loadData();
@@ -77,13 +76,40 @@ Ext.define('CustomApp', {
         });
 
         this.pulldownContainer.add(this.severityComboBox);    // add the severity list to the pulldown container so it lays out horiz, not the app!
+
+        this._initButton();
+     },
+
+     _initButton: function() {
+        this.updateTTDButton = Ext.create("Rally.ui.Button", 
+            {
+              text  : "Update Target Testing Date",
+              handler: function() 
+              {
+                this._updateTTD();
+              },
+              scope: this
+            });
+        
+        this.updateTTDButton.setDisabled(true);
+
+        this.pulldownContainer.add(this.updateTTDButton);
+     },
+
+     _updateTTD: function() {
+        if(this.storyList){
+          for (var i = this.storyList.data.items.length - 1; i >= 0; i--) {
+            var story = this.storyList.data.items[i];
+            console.log("Handling story", story);
+          };
+        }
      },
 
     // Get data from Rally
     _loadData: function() {
 
       var selectedIterRef = this.iterComboBox.getRecord().get('_ref');              // the _ref is unique, unlike the iteration name that can change; lets query on it instead!
-      var selectedSeverityValue = this.severityComboBox.getRecord().get('value');   // remember to console log the record to see the raw data and relize what you can pluck out
+      var selectedSeverityValue = this.severityComboBox.getRecord().get('_ref');   // remember to console log the record to see the raw data and relize what you can pluck out
 
       console.log('selected iter', selectedIterRef);
       console.log('selected severity', selectedSeverityValue);
@@ -93,14 +119,16 @@ Ext.define('CustomApp', {
               property: 'Iteration',
               operation: '=',
               value: selectedIterRef
-            },
-            {
-              property: 'Severity',
-              operation: '=',
-              value: selectedSeverityValue
             }
           ];
-
+      if (selectedSeverityValue) {
+        myFilters.push(            
+          {
+              property: 'Owner',
+              operation: '=',
+              value: selectedSeverityValue
+            });
+      }
       // if store exists, just load new data
       if (this.defectStore) {
         console.log('store exists');
@@ -111,19 +139,23 @@ Ext.define('CustomApp', {
       } else {
         console.log('creating store');
         this.defectStore = Ext.create('Rally.data.wsapi.Store', {     // create defectStore on the App (via this) so the code above can test for it's existence!
-          model: 'Defect',
+          model: 'HierarchicalRequirement',
           autoLoad: true,                         // <----- Don't forget to set this to true! heh
           filters: myFilters,
           listeners: {
               load: function(myStore, myData, success) {
-                  console.log('got data!', myStore, myData);
+                  console.log('WS got data!', myStore, myData);
+                  console.log('myStore:', myStore, myData);
+                  console.log('myData', myStore, myData);
+                  this.storyList = myStore;
+                  this.updateTTDButton.setDisabled(false);
                   if (!this.defectGrid) {           // only create a grid if it does NOT already exist
                     this._createGrid(myStore);      // if we did NOT pass scope:this below, this line would be incorrectly trying to call _createGrid() on the store which does not exist.
                   }
               },
               scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
           },
-          fetch: ['FormattedID', 'Name', 'Severity', 'Iteration']   // Look in the WSAPI docs online to see all fields available!
+          fetch: ['FormattedID', 'Name', 'Iteration']   // Look in the WSAPI docs online to see all fields available!
         });
       }
     },
@@ -147,7 +179,7 @@ Ext.define('CustomApp', {
 
             Rally.launchApp('CustomApp', {
                 name:"InteractiveRallyGrid",
-	            parentRepos:""
+              parentRepos:""
             });
 
         });
