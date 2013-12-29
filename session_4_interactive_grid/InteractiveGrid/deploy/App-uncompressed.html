@@ -15,10 +15,8 @@ Ext.define('CustomApp', {
     extend: 'Rally.app.App',      // The parent class manages the app 'lifecycle' and calls launch() when ready
     componentCls: 'app',          // CSS styles found in app.css
 
-
     defectStore: undefined,       // app level references to the store and grid for easy access in various methods
     defectGrid: undefined,
-    storyList: undefined,
 
     // Entry Point to App
     launch: function() {
@@ -97,13 +95,54 @@ Ext.define('CustomApp', {
      },
 
      _updateTTD: function() {
-        if(this.storyList){
-          for (var i = this.storyList.data.items.length - 1; i >= 0; i--) {
-            var story = this.storyList.data.items[i];
-            console.log("Handling story", story);
-          };
-        }
-     },
+        if(this.defectStore) {
+          var stories = this.defectStore.data;
+          var that = this;
+          stories.each(function(story) {
+            that._handleStory(story);
+          });
+        };
+      },
+
+    _handleStory: function(story){
+        console.log("Handling story in each:", story);
+        console.log("Its tasks:", story.data.Tasks);
+        var taskFilter = [{
+          property: 'WorkProduct',
+          operation: '=',
+          value: story.data._ref
+        }];
+        var taskStoreConfig = {     
+          model: 'Task',
+          autoLoad: true,                         
+          filters: taskFilter,
+          listeners: {
+            load: function(myStore, myData, success) {
+                console.log('Tasks got for', story.data.FormattedID);
+                console.log('myData', myData);
+                var ttd = '~';
+                for (var i = myData.length - 1; i >= 0; i--) {
+                  var task = myData[i].data;
+                  var t_ttd = task.c_TargetTestingDate;
+                    if (! t_ttd){
+                      console.log('Warning Task without ttd', task.FormattedID);
+                    }else if(ttd === '~'){
+                      ttd = t_ttd;
+                    }else if(ttd < t_ttd){
+                      ttd = t_ttd;
+                    }
+                };
+                if(ttd != '~') { 
+                  story.set('c_TargetTestingDate', ttd);
+                  console.log(story.data.FormattedID, ' -> ', story.data.c_TargetTestingDate);
+                }
+            },
+            scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
+          },
+          fetch: ['FormattedID', 'Name', 'c_TargetTestingDate']   // Look in the WSAPI docs online to see all fields available!
+        };
+        Ext.create('Rally.data.wsapi.Store', taskStoreConfig);
+    },
 
     // Get data from Rally
     _loadData: function() {
@@ -142,12 +181,12 @@ Ext.define('CustomApp', {
           model: 'HierarchicalRequirement',
           autoLoad: true,                         // <----- Don't forget to set this to true! heh
           filters: myFilters,
+          autoSync: true,
           listeners: {
               load: function(myStore, myData, success) {
-                  console.log('WS got data!', myStore, myData);
+                  console.log('WS got data!');
                   console.log('myStore:', myStore, myData);
                   console.log('myData', myStore, myData);
-                  this.storyList = myStore;
                   this.updateTTDButton.setDisabled(false);
                   if (!this.defectGrid) {           // only create a grid if it does NOT already exist
                     this._createGrid(myStore);      // if we did NOT pass scope:this below, this line would be incorrectly trying to call _createGrid() on the store which does not exist.
@@ -155,7 +194,7 @@ Ext.define('CustomApp', {
               },
               scope: this                         // This tells the wsapi data store to forward pass along the app-level context into ALL listener functions
           },
-          fetch: ['FormattedID', 'Name', 'Iteration']   // Look in the WSAPI docs online to see all fields available!
+          fetch: ['FormattedID', 'Name', 'Iteration', 'c_TargetTestingDate']   // Look in the WSAPI docs online to see all fields available!
         });
       }
     },
@@ -166,7 +205,7 @@ Ext.define('CustomApp', {
       this.defectGrid = Ext.create('Rally.ui.grid.Grid', {
         store: myDefectStore,
         columnCfgs: [         // Columns to display; must be the same names specified in the fetch: above in the wsapi data store
-          'FormattedID', 'Name', 'Severity', 'Iteration'
+          'FormattedID', 'Name', 'Severity', 'Iteration', 'c_TargetTestingDate'
         ]
       });
 
